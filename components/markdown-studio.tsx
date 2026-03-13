@@ -294,6 +294,15 @@ export function MarkdownStudio() {
     }
 
     assignRevealVariants(root);
+  }, [renderedSource]);
+
+  useEffect(() => {
+    const root = previewRef.current;
+
+    if (!root) {
+      return;
+    }
+
     applyMarkers(root, markers);
   }, [markers, renderedSource]);
 
