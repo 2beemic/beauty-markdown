@@ -1,27 +1,14 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { SAMPLE_MARKDOWN } from "@/lib/sample-markdown";
-import {
-  hashSource,
-  Marker,
-  MarkerColor,
-  MarkerDocuments,
-  readStoredJson,
-  STORAGE_KEYS
-} from "@/lib/storage";
+import { STORAGE_KEYS } from "@/lib/storage";
 
 const REVEAL_VARIANTS = ["up", "left", "right", "depth"] as const;
-const MARKER_COLORS: Array<{ value: MarkerColor; label: string; swatch: string }> = [
-  { value: "yellow", label: "黄", swatch: "bg-glow-sand" },
-  { value: "green", label: "緑", swatch: "bg-glow-mint" },
-  { value: "blue", label: "青", swatch: "bg-glow-sky" },
-  { value: "pink", label: "桃", swatch: "bg-glow-rose" }
-];
 
 function encodeShareSource(source: string) {
   if (typeof window === "undefined") {
@@ -67,150 +54,34 @@ function buildShareUrl(source: string) {
   return url.toString();
 }
 
-type ToolbarState = {
-  start: number;
-  end: number;
-  top: number;
-  left: number;
-  hasOverlap: boolean;
-} | null;
-
-function mergeWithoutOverlaps(markers: Marker[], nextMarker: Marker) {
-  const filtered = markers.filter(
-    (marker) => marker.end <= nextMarker.start || marker.start >= nextMarker.end
-  );
-
-  return [...filtered, nextMarker].sort((left, right) => left.start - right.start);
-}
-
-function removeMarkerSpans(root: HTMLElement) {
-  const markers = root.querySelectorAll("span[data-marker-id]");
-
-  markers.forEach((element) => {
-    const parent = element.parentNode;
-
-    while (element.firstChild) {
-      parent?.insertBefore(element.firstChild, element);
-    }
-
-    parent?.removeChild(element);
-  });
-
-  root.normalize();
-}
-
-function wrapMarker(root: HTMLElement, marker: Marker) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const textNodes: Array<{ node: Text; start: number; end: number }> = [];
-  let cursor = 0;
-
-  while (walker.nextNode()) {
-    const node = walker.currentNode as Text;
-    const length = node.textContent?.length ?? 0;
-
-    textNodes.push({ node, start: cursor, end: cursor + length });
-    cursor += length;
-  }
-
-  const overlaps = textNodes.filter(
-    ({ end, start }) => marker.start < end && marker.end > start && end > start
-  );
-
-  overlaps.reverse().forEach(({ node, start }) => {
-    const text = node.textContent ?? "";
-    const innerStart = Math.max(0, marker.start - start);
-    const innerEnd = Math.min(text.length, marker.end - start);
-
-    if (innerStart >= innerEnd) {
-      return;
-    }
-
-    let middle = node;
-
-    if (innerStart > 0) {
-      middle = middle.splitText(innerStart);
-    }
-
-    if (innerEnd - innerStart < middle.textContent!.length) {
-      middle.splitText(innerEnd - innerStart);
-    }
-
-    const span = document.createElement("span");
-    span.className = "marker-highlight";
-    span.dataset.markerId = marker.id;
-    span.dataset.color = marker.color;
-    span.dataset.animated = "true";
-    middle.parentNode?.insertBefore(span, middle);
-    span.appendChild(middle);
-
-    window.setTimeout(() => {
-      span.dataset.animated = "false";
-    }, 1200);
-  });
-}
-
-function applyMarkers(root: HTMLElement, markers: Marker[]) {
-  removeMarkerSpans(root);
-  markers.forEach((marker) => wrapMarker(root, marker));
-}
-
-function getSelectionOffsets(root: HTMLElement, selection: Selection) {
-  if (selection.rangeCount === 0) {
-    return null;
-  }
-
-  const range = selection.getRangeAt(0);
-
-  if (!root.contains(range.commonAncestorContainer) || range.collapsed) {
-    return null;
-  }
-
-  const startRange = range.cloneRange();
-  startRange.selectNodeContents(root);
-  startRange.setEnd(range.startContainer, range.startOffset);
-
-  const endRange = range.cloneRange();
-  endRange.selectNodeContents(root);
-  endRange.setEnd(range.endContainer, range.endOffset);
-
-  const start = startRange.toString().length;
-  const end = endRange.toString().length;
-
-  if (start === end) {
-    return null;
-  }
-
-  return {
-    start: Math.min(start, end),
-    end: Math.max(start, end),
-    rect: range.getBoundingClientRect()
-  };
-}
-
 function formatFileSize(text: string) {
   const kilo = new Blob([text]).size / 1024;
   return `${kilo.toFixed(kilo > 99 ? 0 : 1)} KB`;
 }
 
+function revealClass(index: number) {
+  return `reveal-item reveal-${REVEAL_VARIANTS[index % REVEAL_VARIANTS.length]}`;
+}
+
+function revealStyle(index: number) {
+  return {
+    ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms`
+  };
+}
+
 export function MarkdownStudio() {
   const fileInputId = useId();
-  const previewRef = useRef<HTMLElement | null>(null);
   const previewShellRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [draftSource, setDraftSource] = useState("");
   const [renderedSource, setRenderedSource] = useState("");
-  const [markerDocuments, setMarkerDocuments] = useState<MarkerDocuments>({});
-  const [toolbar, setToolbar] = useState<ToolbarState>(null);
   const [dragActive, setDragActive] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [statusMessage, setStatusMessage] = useState("Markdownまたはテキストを入力してください。");
 
-  const documentId = useMemo(() => hashSource(renderedSource), [renderedSource]);
-  const markers = markerDocuments[documentId] ?? [];
   const hasDocument = renderedSource.trim().length > 0;
-  const revealCounterRef = useRef(0);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -220,7 +91,6 @@ export function MarkdownStudio() {
     const nextTheme = storedTheme === "dark" || (!storedTheme && preferredDark) ? "dark" : "light";
     const storedDraft = window.localStorage.getItem(STORAGE_KEYS.draft) ?? "";
     const storedRendered = window.localStorage.getItem(STORAGE_KEYS.rendered) ?? "";
-    const storedMarkerDocuments = readStoredJson<MarkerDocuments>(STORAGE_KEYS.markerDocuments, {});
     let nextDraft = storedDraft;
     let nextRendered = storedRendered;
 
@@ -237,7 +107,6 @@ export function MarkdownStudio() {
     setTheme(nextTheme);
     setDraftSource(nextDraft);
     setRenderedSource(nextRendered);
-    setMarkerDocuments(storedMarkerDocuments);
     if (sharedParam && nextRendered) {
       setStatusMessage("共有URLから文書を読み込みました。");
     }
@@ -269,24 +138,6 @@ export function MarkdownStudio() {
   }, [renderedSource, isHydrated]);
 
   useEffect(() => {
-    if (!isHydrated) {
-      return;
-    }
-
-    window.localStorage.setItem(STORAGE_KEYS.markerDocuments, JSON.stringify(markerDocuments));
-  }, [isHydrated, markerDocuments]);
-
-  useEffect(() => {
-    const root = previewRef.current;
-
-    if (!root) {
-      return;
-    }
-
-    applyMarkers(root, markers);
-  }, [markers, renderedSource]);
-
-  useEffect(() => {
     const handleFullscreenChange = () => {
       setIsFullscreen(document.fullscreenElement === previewShellRef.current);
     };
@@ -297,56 +148,6 @@ export function MarkdownStudio() {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
     };
   }, []);
-
-  useEffect(() => {
-    const handleSelectionChange = () => {
-      const root = previewRef.current;
-
-      if (!root) {
-        setToolbar(null);
-        return;
-      }
-
-      const selection = window.getSelection();
-
-      if (!selection) {
-        setToolbar(null);
-        return;
-      }
-
-      const offsets = getSelectionOffsets(root, selection);
-
-      if (!offsets) {
-        setToolbar(null);
-        return;
-      }
-
-      const hasOverlap = markers.some(
-        (marker) => marker.start < offsets.end && marker.end > offsets.start
-      );
-
-      setToolbar({
-        start: offsets.start,
-        end: offsets.end,
-        top: Math.max(offsets.rect.top + window.scrollY - 58, 16),
-        left: Math.max(
-          24,
-          Math.min(offsets.rect.left + window.scrollX + offsets.rect.width / 2, window.innerWidth - 24)
-        ),
-        hasOverlap
-      });
-    };
-
-    document.addEventListener("selectionchange", handleSelectionChange);
-    window.addEventListener("resize", handleSelectionChange);
-    window.addEventListener("scroll", handleSelectionChange, true);
-
-    return () => {
-      document.removeEventListener("selectionchange", handleSelectionChange);
-      window.removeEventListener("resize", handleSelectionChange);
-      window.removeEventListener("scroll", handleSelectionChange, true);
-    };
-  }, [markers]);
 
   const handleThemeToggle = () => {
     setTheme((current) => (current === "light" ? "dark" : "light"));
@@ -359,7 +160,7 @@ export function MarkdownStudio() {
     }
 
     setRenderedSource(draftSource);
-    setStatusMessage("プレビューを更新しました。本文を選択するとマーカーを付けられます。");
+    setStatusMessage("プレビューを更新しました。");
   };
 
   const handleLoadSample = () => {
@@ -368,18 +169,10 @@ export function MarkdownStudio() {
     setStatusMessage("サンプルMarkdownを読み込みました。");
   };
 
-  const clearSelection = () => {
-    const selection = window.getSelection();
-    selection?.removeAllRanges();
-    setToolbar(null);
-  };
-
   const handleClear = () => {
     setDraftSource("");
     setRenderedSource("");
-    setToolbar(null);
     setStatusMessage("入力内容をクリアしました。");
-    clearSelection();
   };
 
   const handleFileContent = (content: string, name: string) => {
@@ -412,50 +205,6 @@ export function MarkdownStudio() {
     };
 
     reader.readAsText(file, "utf-8");
-  };
-
-  const handleAddMarker = (color: MarkerColor) => {
-    if (!toolbar) {
-      return;
-    }
-
-    const nextMarker: Marker = {
-      id: `${toolbar.start}-${toolbar.end}-${color}-${Date.now()}`,
-      start: toolbar.start,
-      end: toolbar.end,
-      color
-    };
-
-    setMarkerDocuments((current) => ({
-      ...current,
-      [documentId]: mergeWithoutOverlaps(current[documentId] ?? [], nextMarker)
-    }));
-    setStatusMessage(`${MARKER_COLORS.find((item) => item.value === color)?.label}色のマーカーを追加しました。`);
-    clearSelection();
-  };
-
-  const handleRemoveMarker = () => {
-    if (!toolbar) {
-      return;
-    }
-
-    setMarkerDocuments((current) => ({
-      ...current,
-      [documentId]: (current[documentId] ?? []).filter(
-        (marker) => marker.end <= toolbar.start || marker.start >= toolbar.end
-      )
-    }));
-    setStatusMessage("選択範囲に重なっていたマーカーを削除しました。");
-    clearSelection();
-  };
-
-  const handleClearAllMarkers = () => {
-    setMarkerDocuments((current) => ({
-      ...current,
-      [documentId]: []
-    }));
-    setStatusMessage("この文書のマーカーをすべて削除しました。");
-    clearSelection();
   };
 
   const handleCopyShareUrl = async () => {
@@ -516,7 +265,15 @@ export function MarkdownStudio() {
     }
   };
 
-  revealCounterRef.current = 0;
+  let revealIndex = 0;
+  const nextReveal = () => {
+    const index = revealIndex;
+    revealIndex += 1;
+    return {
+      className: revealClass(index),
+      style: revealStyle(index)
+    };
+  };
 
   return (
     <main className="relative overflow-hidden px-4 pb-10 pt-6 sm:px-6 lg:px-8">
@@ -525,7 +282,7 @@ export function MarkdownStudio() {
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.55),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(163,191,219,0.22),transparent_28%)]" />
           <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-3xl">
-              <div className="mb-3 inline-flex items-center rounded-full border border-[var(--line)] bg-white/45 px-3 py-1 text-xs font-medium tracking-[0.18em] text-[var(--text-faint)] uppercase dark:bg-white/5">
+              <div className="mb-3 inline-flex items-center rounded-full border border-[var(--line)] bg-white/45 px-3 py-1 text-xs font-medium tracking-[0.18em] uppercase text-[var(--text-faint)] dark:bg-white/5">
                 md.2bee.jp preview studio
               </div>
               <h1 className="font-sans text-3xl font-semibold tracking-[0.02em] text-[var(--text)] sm:text-5xl">
@@ -539,7 +296,7 @@ export function MarkdownStudio() {
 
             <div className="flex flex-wrap items-center gap-3 self-start">
               <div className="rounded-full border border-[var(--line)] bg-white/55 px-4 py-2 text-xs text-[var(--text-faint)] dark:bg-white/5">
-                読み込み・整形・マーカー保存をブラウザ内で完結
+                読み込み・整形・共有をブラウザ内で完結
               </div>
               <button
                 type="button"
@@ -556,7 +313,7 @@ export function MarkdownStudio() {
             {[
               "貼り付け・アップロード・ドラッグ&ドロップに対応",
               "雑誌のような余白とタイポグラフィで表示",
-              "選択範囲にマーカーを付けて保存"
+              "共有URLとフル画面読書に対応"
             ].map((item) => (
               <div
                 key={item}
@@ -683,12 +440,12 @@ export function MarkdownStudio() {
               <div>
                 <h2 className="font-sans text-xl font-semibold text-[var(--text)]">プレビュー</h2>
                 <p className="mt-1 text-sm text-[var(--text-soft)]">
-                  本文を選択するとマーカーツールが表示されます。
+                  レンダリング後の本文を、そのまま共有やフル画面読書に使えます。
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <div className="rounded-full border border-[var(--line)] px-3 py-1 text-xs text-[var(--text-faint)]">
-                  {hasDocument ? `${markers.length} markers` : "no document"}
+                  {hasDocument ? "ready to read" : "no document"}
                 </div>
                 <button
                   type="button"
@@ -704,14 +461,6 @@ export function MarkdownStudio() {
                 >
                   {isFullscreen ? "フル画面を閉じる" : "フル画面で読む"}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleClearAllMarkers}
-                  disabled={!hasDocument || markers.length === 0}
-                  className="rounded-full border border-[var(--line)] px-4 py-2 text-sm text-[var(--text)] transition hover:bg-white/55 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/10"
-                >
-                  すべてのマーカーを消す
-                </button>
               </div>
             </div>
 
@@ -721,60 +470,40 @@ export function MarkdownStudio() {
               }`}
             >
               {hasDocument ? (
-                <article
-                  ref={previewRef}
-                  className="prose-magazine mx-auto max-w-3xl"
-                  aria-label="Markdownプレビュー"
-                >
+                <article className="prose-magazine mx-auto max-w-3xl" aria-label="Markdownプレビュー">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm, remarkBreaks]}
                     rehypePlugins={[rehypeSanitize]}
                     skipHtml
                     components={{
                       h1: ({ children }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <h1
-                            className={`animate-drift reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          >
+                          <h1 className={`animate-drift ${reveal.className}`} style={reveal.style}>
                             {children}
                           </h1>
                         );
                       },
                       h2: ({ children }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <h2
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          >
+                          <h2 className={reveal.className} style={reveal.style}>
                             {children}
                           </h2>
                         );
                       },
                       h3: ({ children }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <h3
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          >
+                          <h3 className={reveal.className} style={reveal.style}>
                             {children}
                           </h3>
                         );
                       },
                       p: ({ children }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <p
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          >
+                          <p className={reveal.className} style={reveal.style}>
                             {children}
                           </p>
                         );
@@ -785,85 +514,53 @@ export function MarkdownStudio() {
                         </a>
                       ),
                       ul: ({ children }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <ul
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          >
+                          <ul className={reveal.className} style={reveal.style}>
                             {children}
                           </ul>
                         );
                       },
                       ol: ({ children }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <ol
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          >
+                          <ol className={reveal.className} style={reveal.style}>
                             {children}
                           </ol>
                         );
                       },
                       blockquote: ({ children }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <blockquote
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          >
+                          <blockquote className={reveal.className} style={reveal.style}>
                             {children}
                           </blockquote>
                         );
                       },
                       pre: ({ children }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <pre
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          >
+                          <pre className={reveal.className} style={reveal.style}>
                             {children}
                           </pre>
                         );
                       },
-                      table: ({ children }) => (
-                        <div
-                          className={`overflow-x-auto reveal-item reveal-${
-                            REVEAL_VARIANTS[revealCounterRef.current % REVEAL_VARIANTS.length]
-                          }`}
-                          style={{
-                            ["--reveal-delay" as string]: `${Math.min(revealCounterRef.current++ * 55, 280)}ms`
-                          }}
-                        >
-                          <table>{children}</table>
-                        </div>
-                      ),
-                      hr: () => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                      table: ({ children }) => {
+                        const reveal = nextReveal();
                         return (
-                          <hr
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          />
+                          <div className={`overflow-x-auto ${reveal.className}`} style={reveal.style}>
+                            <table>{children}</table>
+                          </div>
                         );
                       },
+                      hr: () => {
+                        const reveal = nextReveal();
+                        return <hr className={reveal.className} style={reveal.style} />;
+                      },
                       img: ({ src, alt }) => {
-                        const index = revealCounterRef.current++;
-                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        const reveal = nextReveal();
                         return (
-                          <img
-                            src={src ?? ""}
-                            alt={alt ?? ""}
-                            className={`reveal-item reveal-${variant}`}
-                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
-                          />
+                          <img src={src ?? ""} alt={alt ?? ""} className={reveal.className} style={reveal.style} />
                         );
                       }
                     }}
@@ -881,7 +578,7 @@ export function MarkdownStudio() {
                   </h3>
                   <p className="mt-4 max-w-xl text-sm leading-7 text-[var(--text-soft)] sm:text-base">
                     Markdownを貼り付けるか、サンプルを読み込むと、見出し・引用・表・コード・画像まで
-                    上品に整えた誌面として表示します。気になった一文には、マーカーも残せます。
+                    上品に整えた誌面として表示します。共有URLやフル画面読書にも対応しています。
                   </p>
                   <button
                     type="button"
@@ -896,40 +593,10 @@ export function MarkdownStudio() {
           </div>
         </section>
 
-        {toolbar && (
-          <div
-            className="toolbar-shadow fixed z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-ink-900/92 px-3 py-2 text-white backdrop-blur-xl"
-            style={{ top: toolbar.top, left: toolbar.left }}
-            role="toolbar"
-            aria-label="マーカーツール"
-          >
-            {MARKER_COLORS.map((color) => (
-              <button
-                key={color.value}
-                type="button"
-                onClick={() => handleAddMarker(color.value)}
-                className="flex items-center gap-2 rounded-full px-3 py-2 text-xs font-medium transition hover:bg-white/10"
-              >
-                <span className={`h-3 w-3 rounded-full ${color.swatch}`} />
-                {color.label}
-              </button>
-            ))}
-            <div className="mx-1 h-5 w-px bg-white/15" />
-            <button
-              type="button"
-              onClick={handleRemoveMarker}
-              disabled={!toolbar.hasOverlap}
-              className="rounded-full px-3 py-2 text-xs font-medium text-white/85 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-35"
-            >
-              削除
-            </button>
-          </div>
-        )}
-
         <footer className="px-1 pb-4 pt-2">
           <div className="glass-panel flex flex-col gap-2 rounded-[1.8rem] px-6 py-5 text-sm text-[var(--text-soft)] sm:flex-row sm:items-center sm:justify-between">
             <p>余白読本は、ブラウザ内だけで文章を美しく整形するMarkdown読書スタジオです。</p>
-            <p>md.2bee.jp 向けMVP / XSS対策あり / localStorage保存対応</p>
+            <p>md.2bee.jp 向けMVP / XSS対策あり / 共有URL対応</p>
           </div>
         </footer>
       </div>
