@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { createElement, type CSSProperties, type ElementType, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
@@ -67,6 +67,69 @@ function revealStyle(index: number) {
   return {
     ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms`
   };
+}
+
+function RevealBlock({
+  as,
+  index,
+  className,
+  children,
+  ...props
+}: {
+  as: ElementType;
+  index: number;
+  className?: string;
+  children?: ReactNode;
+} & Record<string, unknown>) {
+  const ref = useRef<HTMLElement | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const node = ref.current;
+
+    if (!node) {
+      return;
+    }
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (reduceMotion) {
+      setVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setVisible(true);
+            observer.disconnect();
+          }
+        });
+      },
+      {
+        threshold: 0.14,
+        rootMargin: "0px 0px -10% 0px"
+      }
+    );
+
+    observer.observe(node);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
+
+  return createElement(
+    as,
+    {
+      ...props,
+      ref,
+      className: `${revealClass(index)} ${visible ? "is-visible" : ""} ${className ?? ""}`.trim(),
+      style: revealStyle(index) as CSSProperties
+    },
+    children
+  );
 }
 
 export function MarkdownStudio() {
@@ -477,35 +540,35 @@ export function MarkdownStudio() {
                     skipHtml
                     components={{
                       h1: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <h1 className={`animate-drift ${reveal.className}`} style={reveal.style}>
+                          <RevealBlock as="h1" index={revealIndex - 1}>
                             {children}
-                          </h1>
+                          </RevealBlock>
                         );
                       },
                       h2: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <h2 className={reveal.className} style={reveal.style}>
+                          <RevealBlock as="h2" index={revealIndex - 1}>
                             {children}
-                          </h2>
+                          </RevealBlock>
                         );
                       },
                       h3: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <h3 className={reveal.className} style={reveal.style}>
+                          <RevealBlock as="h3" index={revealIndex - 1}>
                             {children}
-                          </h3>
+                          </RevealBlock>
                         );
                       },
                       p: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <p className={reveal.className} style={reveal.style}>
+                          <RevealBlock as="p" index={revealIndex - 1}>
                             {children}
-                          </p>
+                          </RevealBlock>
                         );
                       },
                       a: ({ children, href }) => (
@@ -514,53 +577,53 @@ export function MarkdownStudio() {
                         </a>
                       ),
                       ul: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <ul className={reveal.className} style={reveal.style}>
+                          <RevealBlock as="ul" index={revealIndex - 1}>
                             {children}
-                          </ul>
+                          </RevealBlock>
                         );
                       },
                       ol: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <ol className={reveal.className} style={reveal.style}>
+                          <RevealBlock as="ol" index={revealIndex - 1}>
                             {children}
-                          </ol>
+                          </RevealBlock>
                         );
                       },
                       blockquote: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <blockquote className={reveal.className} style={reveal.style}>
+                          <RevealBlock as="blockquote" index={revealIndex - 1}>
                             {children}
-                          </blockquote>
+                          </RevealBlock>
                         );
                       },
                       pre: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <pre className={reveal.className} style={reveal.style}>
+                          <RevealBlock as="pre" index={revealIndex - 1}>
                             {children}
-                          </pre>
+                          </RevealBlock>
                         );
                       },
                       table: ({ children }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <div className={`overflow-x-auto ${reveal.className}`} style={reveal.style}>
+                          <RevealBlock as="div" index={revealIndex - 1} className="overflow-x-auto">
                             <table>{children}</table>
-                          </div>
+                          </RevealBlock>
                         );
                       },
                       hr: () => {
-                        const reveal = nextReveal();
-                        return <hr className={reveal.className} style={reveal.style} />;
+                        nextReveal();
+                        return <RevealBlock as="hr" index={revealIndex - 1} />;
                       },
                       img: ({ src, alt }) => {
-                        const reveal = nextReveal();
+                        nextReveal();
                         return (
-                          <img src={src ?? ""} alt={alt ?? ""} className={reveal.className} style={reveal.style} />
+                          <RevealBlock as="img" index={revealIndex - 1} src={src ?? ""} alt={alt ?? ""} />
                         );
                       }
                     }}

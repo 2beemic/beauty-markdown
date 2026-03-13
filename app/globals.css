@@ -171,11 +171,20 @@ a {
 }
 
 .reveal-item {
+  opacity: 0;
   animation-duration: 0.95s;
   animation-timing-function: cubic-bezier(.22,1,.36,1);
   animation-fill-mode: both;
   animation-delay: var(--reveal-delay, 0ms);
   will-change: transform, opacity;
+}
+
+.reveal-item.is-visible {
+  opacity: 1;
+}
+
+.reveal-item:not(.is-visible) {
+  animation: none;
 }
 
 .reveal-up {
