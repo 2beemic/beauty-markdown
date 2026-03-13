@@ -192,17 +192,6 @@ function formatFileSize(text: string) {
   return `${kilo.toFixed(kilo > 99 ? 0 : 1)} KB`;
 }
 
-function assignRevealVariants(root: HTMLElement) {
-  const elements = Array.from(root.children) as HTMLElement[];
-
-  elements.forEach((element, index) => {
-    const variant = REVEAL_VARIANTS[(index * 7 + element.textContent!.length) % REVEAL_VARIANTS.length];
-    element.dataset.reveal = variant;
-    element.dataset.revealed = "false";
-    element.style.setProperty("--reveal-delay", `${Math.min(index * 55, 280)}ms`);
-  });
-}
-
 export function MarkdownStudio() {
   const fileInputId = useId();
   const previewRef = useRef<HTMLElement | null>(null);
@@ -221,6 +210,7 @@ export function MarkdownStudio() {
   const documentId = useMemo(() => hashSource(renderedSource), [renderedSource]);
   const markers = markerDocuments[documentId] ?? [];
   const hasDocument = renderedSource.trim().length > 0;
+  const revealCounterRef = useRef(0);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -293,54 +283,8 @@ export function MarkdownStudio() {
       return;
     }
 
-    assignRevealVariants(root);
-  }, [renderedSource]);
-
-  useEffect(() => {
-    const root = previewRef.current;
-
-    if (!root) {
-      return;
-    }
-
     applyMarkers(root, markers);
   }, [markers, renderedSource]);
-
-  useEffect(() => {
-    const root = previewRef.current;
-
-    if (!root) {
-      return;
-    }
-
-    const targets = Array.from(root.children) as HTMLElement[];
-
-    if (targets.length === 0) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            (entry.target as HTMLElement).dataset.revealed = "true";
-            observer.unobserve(entry.target);
-          }
-        });
-      },
-      {
-        root: isFullscreen ? previewShellRef.current : null,
-        rootMargin: "0px 0px -8% 0px",
-        threshold: 0.16
-      }
-    );
-
-    targets.forEach((target) => observer.observe(target));
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [isFullscreen, renderedSource]);
 
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -572,6 +516,8 @@ export function MarkdownStudio() {
     }
   };
 
+  revealCounterRef.current = 0;
+
   return (
     <main className="relative overflow-hidden px-4 pb-10 pt-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
@@ -785,24 +731,141 @@ export function MarkdownStudio() {
                     rehypePlugins={[rehypeSanitize]}
                     skipHtml
                     components={{
-                      h1: ({ children }) => (
-                        <h1 className="animate-drift">
-                          {children}
-                        </h1>
-                      ),
-                      h2: ({ children }) => <h2>{children}</h2>,
-                      h3: ({ children }) => <h3>{children}</h3>,
-                      p: ({ children }) => <p>{children}</p>,
+                      h1: ({ children }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <h1
+                            className={`animate-drift reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          >
+                            {children}
+                          </h1>
+                        );
+                      },
+                      h2: ({ children }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <h2
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          >
+                            {children}
+                          </h2>
+                        );
+                      },
+                      h3: ({ children }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <h3
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          >
+                            {children}
+                          </h3>
+                        );
+                      },
+                      p: ({ children }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <p
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          >
+                            {children}
+                          </p>
+                        );
+                      },
                       a: ({ children, href }) => (
                         <a href={href} target="_blank" rel="noreferrer">
                           {children}
                         </a>
                       ),
+                      ul: ({ children }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <ul
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          >
+                            {children}
+                          </ul>
+                        );
+                      },
+                      ol: ({ children }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <ol
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          >
+                            {children}
+                          </ol>
+                        );
+                      },
+                      blockquote: ({ children }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <blockquote
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          >
+                            {children}
+                          </blockquote>
+                        );
+                      },
+                      pre: ({ children }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <pre
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          >
+                            {children}
+                          </pre>
+                        );
+                      },
                       table: ({ children }) => (
-                        <div className="overflow-x-auto">
+                        <div
+                          className={`overflow-x-auto reveal-item reveal-${
+                            REVEAL_VARIANTS[revealCounterRef.current % REVEAL_VARIANTS.length]
+                          }`}
+                          style={{
+                            ["--reveal-delay" as string]: `${Math.min(revealCounterRef.current++ * 55, 280)}ms`
+                          }}
+                        >
                           <table>{children}</table>
                         </div>
-                      )
+                      ),
+                      hr: () => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <hr
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          />
+                        );
+                      },
+                      img: ({ src, alt }) => {
+                        const index = revealCounterRef.current++;
+                        const variant = REVEAL_VARIANTS[index % REVEAL_VARIANTS.length];
+                        return (
+                          <img
+                            src={src ?? ""}
+                            alt={alt ?? ""}
+                            className={`reveal-item reveal-${variant}`}
+                            style={{ ["--reveal-delay" as string]: `${Math.min(index * 55, 280)}ms` }}
+                          />
+                        );
+                      }
                     }}
                   >
                     {renderedSource}

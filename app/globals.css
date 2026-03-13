@@ -2,6 +2,56 @@
 @tailwind components;
 @tailwind utilities;
 
+@keyframes revealUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 34px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes revealLeft {
+  from {
+    opacity: 0;
+    transform: translate3d(-34px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes revealRight {
+  from {
+    opacity: 0;
+    transform: translate3d(34px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes revealDepth {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: translate3d(0, 12px, -90px) scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 :root {
   color-scheme: light;
   --bg: #f5f2ec;
@@ -120,40 +170,28 @@ a {
   opacity: 1;
 }
 
-.prose-magazine > *[data-reveal] {
-  transition:
-    opacity 0.95s cubic-bezier(.22,1,.36,1),
-    transform 1.05s cubic-bezier(.22,1,.36,1),
-    filter 0.95s cubic-bezier(.22,1,.36,1);
-  transition-delay: var(--reveal-delay, 0ms);
+.reveal-item {
+  animation-duration: 0.95s;
+  animation-timing-function: cubic-bezier(.22,1,.36,1);
+  animation-fill-mode: both;
+  animation-delay: var(--reveal-delay, 0ms);
   will-change: transform, opacity;
 }
 
-.prose-magazine > *[data-reveal="up"][data-revealed="false"] {
-  opacity: 0;
-  transform: translate3d(0, 34px, 0);
+.reveal-up {
+  animation-name: revealUp;
 }
 
-.prose-magazine > *[data-reveal="left"][data-revealed="false"] {
-  opacity: 0;
-  transform: translate3d(-34px, 0, 0);
+.reveal-left {
+  animation-name: revealLeft;
 }
 
-.prose-magazine > *[data-reveal="right"][data-revealed="false"] {
-  opacity: 0;
-  transform: translate3d(34px, 0, 0);
+.reveal-right {
+  animation-name: revealRight;
 }
 
-.prose-magazine > *[data-reveal="depth"][data-revealed="false"] {
-  opacity: 0;
-  transform: translate3d(0, 12px, -90px) scale(0.96);
-  filter: blur(8px);
-}
-
-.prose-magazine > *[data-revealed="true"] {
-  opacity: 1;
-  filter: blur(0);
-  transform: translate3d(0, 0, 0) scale(1);
+.reveal-depth {
+  animation-name: revealDepth;
 }
 
 .prose-magazine h1,
